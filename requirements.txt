@@ -1,0 +1,8 @@
+imageio-ffmpeg
+python-dotenv
+sounddevice
+numpy
+pydub
+spotipy
+yt-dlp
+:::
