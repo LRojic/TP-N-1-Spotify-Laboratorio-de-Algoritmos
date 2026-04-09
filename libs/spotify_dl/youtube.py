@@ -198,7 +198,8 @@ def find_and_download_songs(kwargs):
                         "force_keyframes": True,
                     },
                 ]
-            save_path = kwargs["track_db"][i]["save_path"]
+            save_path = "musica"
+            os.makedirs(save_path, exist_ok=True)
             file_path = path.join(save_path, file_name)
 
             mp3file_path = f"{file_path}.mp3"
