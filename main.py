@@ -19,8 +19,34 @@ os.makedirs(CARPETA_DESCARGAS, exist_ok=True)
 
 # Variables globales
 cancion_actual = None
-
+duracion_total = 0
+reproduciendo = False
 # ────────── FUNCIONES ──────────
+def formatear_tiempo(segundos):
+    minutos = int(segundos // 60)
+    segs = int(segundos % 60)
+    return f"{minutos}:{segs:02d}"
+
+    
+def actualizar_barra():
+    global reproduciendo
+
+    if reproduciendo:
+        try:
+            pos = player.get_pos()
+
+            if pos >= 0:
+                progress.set(pos)
+
+                tiempo_actual = formatear_tiempo(pos)
+                tiempo_total = formatear_tiempo(duracion_total)
+
+                tiempo_label.config(text=f"{tiempo_actual} / {tiempo_total}")
+
+        except:
+            pass
+
+    root.after(500, actualizar_barra)
 def buscar():
     query = entry.get().strip()
     if not query:
@@ -66,79 +92,264 @@ def convertir_a_mp3(ruta_original):
         clip.write_audiofile(ruta_mp3, logger=None)
         clip.close()
         print(f"✅ Convertido a MP3: {ruta_mp3}")
+        log_estado(f"✅ Convertido a MP3: {ruta_mp3}")
         return ruta_mp3
     except Exception as e:
         print(f"❌ Error convirtiendo a MP3: {e}")
+        log_estado(f"❌ Error convirtiendo a MP3: {e}")
         return ruta_original  # fallback
-
 def reproducir(event):
+    global is_paused, duracion_total, reproduciendo
+
+    is_paused = False
+    btn_play.config(text="⏸️")
+
     index = resultados.curselection()
     if not index:
         return
+
     track = resultados.track_data[index[0]]
 
+    # ────────── LOCAL ──────────
     if track.get('local'):
         ruta = convertir_a_mp3(track['path'])
-        threading.Thread(target=player.reproducir, args=(ruta,), daemon=True).start()
+
+        try:
+            clip = AudioFileClip(ruta)
+            duracion_total = int(clip.duration)
+            clip.close()
+
+            root.after(0, lambda: progress.config(to=duracion_total))
+            root.after(0, lambda: tiempo_label.config(
+                text=f"0:00 / {formatear_tiempo(duracion_total)}"
+            ))
+
+            reproduciendo = True
+            log_estado("▶️ Reproduciendo canción local")
+
+        except Exception as e:
+            log_estado(f"❌ Error leyendo duración: {e}")
+
+        threading.Thread(
+            target=player.reproducir,
+            args=(ruta,),
+            daemon=True
+        ).start()
+
+    # ────────── SPOTIFY / DESCARGA ──────────
     else:
         def descargar_y_reproducir():
+            global duracion_total, reproduciendo
+
             try:
+                log_estado("⬇️ Descargando canción...")
+
                 url = track['external_urls']['spotify']
                 ruta_descarga = download_track(sp, url, CARPETA_DESCARGAS)
+
                 if ruta_descarga:
                     for f in os.listdir(ruta_descarga):
                         if f.lower().endswith(('.mp3', '.wav', '.webm')):
                             ruta_completa = os.path.join(ruta_descarga, f)
                             ruta_mp3 = convertir_a_mp3(ruta_completa)
+
+                            # 🎧 calcular duración
+                            try:
+                                clip = AudioFileClip(ruta_mp3)
+                                duracion_total = int(clip.duration)
+                                clip.close()
+
+                                root.after(0, lambda: progress.config(to=duracion_total))
+                                root.after(0, lambda: tiempo_label.config(
+                                    text=f"0:00 / {formatear_tiempo(duracion_total)}"
+                                ))
+
+                                reproduciendo = True
+
+                            except Exception as e:
+                                log_estado(f"❌ Error leyendo duración: {e}")
+
+                            log_estado("🎵 Reproduciendo canción descargada")
                             player.reproducir(ruta_mp3)
                             break
                 else:
-                    estado_label.config(text="❌ No se pudo descargar")
-            except Exception as e:
-                estado_label.config(text=f"❌ Error: {e}")
-                print(f"Error: {e}")
-        threading.Thread(target=descargar_y_reproducir, daemon=True).start()
+                    log_estado("❌ No se pudo descargar")
 
-# ────────── INTERFAZ ──────────
+            except Exception as e:
+                log_estado(f"❌ Error: {e}")
+
+        threading.Thread(target=descargar_y_reproducir, daemon=True).start()
+# ────────── INTERFAZ import tkinter as tk
+import tkinter as tk
+from tkinter import Listbox, Label, Frame
+
+# ────────── CONFIG COLORES ──────────
+BG_COLOR = "#121212"
+CARD_COLOR = "#181818"
+ACCENT = "#00BFFF"  # azul eléctrico
+TEXT = "#FFFFFF"
+SUBTEXT = "#B3B3B3"
+
+FONT_TITLE = ("Segoe UI", 16, "bold")
+FONT_NORMAL = ("Segoe UI", 13)
+FONT_SMALL = ("Segoe UI", 11)
+
+# ────────── ESTADO PLAYER ──────────
+is_paused = False
+
+def toggle_play():
+    global is_paused
+    if is_paused:
+        player.reanudar()
+        btn_play.config(text="⏸️")
+        log_estado("▶️ Reproduciendo")
+    else:
+        player.pausar()
+        btn_play.config(text="▶️")
+        log_estado("⏸️ Pausado")
+
+    is_paused = not is_paused
+
+# ────────── ROOT ──────────
 root = tk.Tk()
 root.title("Reproductor de Música - Offline/Online")
-root.geometry("600x500")
+root.geometry("700x550")
+root.configure(bg=BG_COLOR)
 
-# Buscador
-search_frame = Frame(root)
-search_frame.pack(pady=10)
-Label(search_frame, text="🔍 Buscar:").pack(side=tk.LEFT, padx=5)
-entry = tk.Entry(search_frame, width=40)
-entry.pack(side=tk.LEFT, padx=5)
-tk.Button(search_frame, text="Buscar", command=buscar).pack(side=tk.LEFT, padx=5)
+# ────────── BUSCADOR ──────────
+search_frame = Frame(root, bg=BG_COLOR)
+search_frame.pack(pady=15)
 
-# Estado
-estado_label = Label(root, text="⏹️ Listo", fg="blue", font=("Arial", 10))
-estado_label.pack(pady=5)
+Label(search_frame, text="🔍 Buscar:", bg=BG_COLOR, fg=TEXT, font=FONT_TITLE).pack(side=tk.LEFT, padx=10)
 
+entry = tk.Entry(
+    search_frame,
+    width=35,
+    font=("Segoe UI", 14),
+    bg=CARD_COLOR,
+    fg=TEXT,
+    insertbackground=TEXT,
+    relief="flat"
+)
+entry.pack(side=tk.LEFT, padx=10, ipady=5)
 
+tk.Button(
+    search_frame,
+    text="Buscar",
+    command=buscar,
+    bg=ACCENT,
+    fg="black",
+    font=FONT_NORMAL,
+    activebackground="#33ccff",
+    relief="flat",
+    padx=10
+).pack(side=tk.LEFT, padx=5)
 
-# Resultados
-Label(root, text="Resultados (Doble click para reproducir):").pack(anchor="w", padx=10)
-resultados = Listbox(root, width=80, height=15)
-resultados.pack(pady=10, padx=10)
+# ────────── ESTADO ──────────
+estado_label = Label(
+    root,
+    text="⏹️ Listo",
+    fg=ACCENT,
+    bg=BG_COLOR,
+    font=FONT_NORMAL
+)
+estado_label.pack(pady=10)
+
+def log_estado(msg):
+    print(msg)
+    try:
+        estado_label.after(0, lambda: estado_label.config(text=msg))
+    except:
+        pass
+
+# ────────── RESULTADOS ──────────
+Label(
+    root,
+    text="Resultados (Doble click para reproducir):",
+    bg=BG_COLOR,
+    fg=TEXT,
+    font=FONT_TITLE
+).pack(anchor="w", padx=15)
+
+resultados = Listbox(
+    root,
+    width=70,
+    height=12,
+    bg=CARD_COLOR,
+    fg=TEXT,
+    font=("Segoe UI", 13),
+    selectbackground=ACCENT,
+    selectforeground="black",
+    relief="flat",
+    bd=0,
+    highlightthickness=0
+)
+resultados.pack(pady=10, padx=15, fill="both", expand=True)
+
 resultados.bind("<Double-1>", reproducir)
 
-# Controles
 # ────────── CONTROLES ──────────
-control_frame = Frame(root)
+control_frame = Frame(root, bg=BG_COLOR)
 control_frame.pack(pady=10)
 
-Label(control_frame, text="CONTROLES:", font=("Arial", 10, "bold")).pack()
-Label(control_frame, text="Doble Click = Reproducir", font=("Arial", 9)).pack()
+Label(
+    control_frame,
+    text="CONTROLES",
+    bg=BG_COLOR,
+    fg=TEXT,
+    font=FONT_TITLE
+).pack()
 
-# Frame para botones
-botones_frame = Frame(control_frame)
-botones_frame.pack(pady=5)
+Label(
+    control_frame,
+    text="Doble Click = Reproducir",
+    bg=BG_COLOR,
+    fg=SUBTEXT,
+    font=FONT_SMALL
+).pack()
 
 # Botones
-tk.Button(botones_frame, text="⏸️ Pausa", command=player.pausar).grid(row=0, column=0, padx=5)
-tk.Button(botones_frame, text="▶️ Reanudar", command=player.reanudar).grid(row=0, column=1, padx=5)
-tk.Button(botones_frame, text="⏹️ Stop", command=player.stop).grid(row=0, column=2, padx=5)
-# Ejecutar
+botones_frame = Frame(control_frame, bg=BG_COLOR)
+botones_frame.pack(pady=8)
+
+btn_style = {
+    "font": FONT_NORMAL,
+    "bg": CARD_COLOR,
+    "fg": TEXT,
+    "activebackground": ACCENT,
+    "activeforeground": "black",
+    "relief": "flat",
+    "padx": 12,
+    "pady": 5
+}
+
+# 🔥 BOTÓN TOGGLE (play/pausa)
+btn_play = tk.Button(botones_frame, text="⏸️", command=toggle_play, **btn_style)
+btn_play.grid(row=0, column=0, padx=5)
+
+# ────────── PROGRESO ──────────
+progress = tk.Scale(
+    root,
+    from_=0,
+    to=100,
+    orient="horizontal",
+    length=500,
+    bg=BG_COLOR,
+    fg=TEXT,
+    troughcolor=CARD_COLOR,
+    highlightthickness=0,
+    bd=0
+)
+progress.pack(pady=5)
+
+tiempo_label = tk.Label(
+    root,
+    text="0:00 / 0:00",
+    bg=BG_COLOR,
+    fg=SUBTEXT,
+    font=("Segoe UI", 11)
+)
+tiempo_label.pack()
+# ────────── RUN ──────────
+actualizar_barra()
 root.mainloop()

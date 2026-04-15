@@ -1,9 +1,9 @@
-imageio-ffmpeg
 moviepy
+imageio-ffmpeg
 python-dotenv
-sounddevice
+pygame
 numpy
 pydub
+sounddevice
 spotipy
 yt-dlp
-pygame
