@@ -14,22 +14,27 @@ def sanitize_filename(name):
         name = name.replace(char, '')
     return name.strip()
 
-
 def get_spotify_track_name(sp, url):
-    """Extrae nombre y artista de una URL de Spotify"""
     try:
-        # Parsear URL: https://open.spotify.com/track/ID
         track_id = url.split('/track/')[-1].split('?')[0]
         track = sp.track(track_id)
         
         name = track.get('name', 'Unknown')
         artist = track['artists'][0]['name'] if track.get('artists') else 'Unknown'
+        album = track['album']['name'] if track.get('album') else 'Unknown'
+        image = track['album']['images'][0]['url'] if track['album']['images'] else None
         
-        return f"{artist} - {name}", name, artist
+        return {
+            "query": f"{artist} - {name}",
+            "name": name,
+            "artist": artist,
+            "album": album,
+            "image": image
+        }
+        
     except Exception as e:
         print(f"❌ Error al obtener datos de Spotify: {e}")
-        return None, None, None
-
+        return None
 
 def download_youtube_audio(query, output_path, filename):
     """Descarga audio de YouTube usando yt-dlp (Python puro, sin subprocess)"""
@@ -112,7 +117,14 @@ def download_youtube_audio(query, output_path, filename):
 
 def download_track(sp, track_url, output_dir='downloads'):
     """Descarga una canción de Spotify"""
-    track_name, name, artist = get_spotify_track_name(sp, track_url)
+    data = get_spotify_track_name(sp, track_url)
+
+    if not data:
+        return None
+
+    track_name = data["query"]
+    name = data["name"]
+    artist = data["artist"]
     
     if not track_name:
         return None

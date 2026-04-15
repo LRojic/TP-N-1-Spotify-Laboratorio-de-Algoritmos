@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 from moviepy import AudioFileClip
 
 from spotify_api import get_spotify_client, search_tracks
+from PIL import Image, ImageTk
+import requests
+from io import BytesIO
+
 from libs.spotify_downloader import download_track
 
 import player  # mover al inicio
@@ -27,11 +31,27 @@ def formatear_tiempo(segundos):
     segs = int(segundos % 60)
     return f"{minutos}:{segs:02d}"
 
+def mostrar_imagen(url):
+    try:
+        response = requests.get(url)
+        img_data = response.content
+
+        img = Image.open(BytesIO(img_data))
+        img = img.resize((200, 200))  # tamaño
+
+        img_tk = ImageTk.PhotoImage(img)
+
+        cover_label.config(image=img_tk)
+        cover_label.image = img_tk  # evitar garbage collector
+
+    except Exception as e:
+        print("Error cargando imagen:", e)
+
     
 def actualizar_barra():
     global reproduciendo
 
-    if reproduciendo:
+    if reproduciendo and not is_paused:
         try:
             pos = player.get_pos()
 
@@ -62,7 +82,7 @@ def buscar():
     # Buscar Spotify
     try:
         for t in search_tracks(sp, query):
-            nombre = f"{t['name']} - {t['artists'][0]['name']}"
+            nombre = f"{t['name']} - {t['artists'][0]['name']} ({t['album']})"
             resultados.insert(tk.END, f"🌐 {nombre}")
             resultados.track_data.append(t)
     except Exception as e:
@@ -103,12 +123,19 @@ def reproducir(event):
 
     is_paused = False
     btn_play.config(text="⏸️")
+    reproduciendo = True
 
     index = resultados.curselection()
     if not index:
         return
 
     track = resultados.track_data[index[0]]
+
+    
+
+        # Mostrar portada si existe
+    if not track.get('local') and track.get('image'):
+        mostrar_imagen(track['image'])
 
     # ────────── LOCAL ──────────
     if track.get('local'):
@@ -198,33 +225,39 @@ FONT_SMALL = ("Segoe UI", 11)
 is_paused = False
 
 def toggle_play():
-    global is_paused
-    if is_paused:
-        player.reanudar()
-        btn_play.config(text="⏸️")
-        log_estado("▶️ Reproduciendo")
-    else:
-        player.pausar()
-        btn_play.config(text="▶️")
-        log_estado("⏸️ Pausado")
+    global is_paused, reproduciendo
 
-    is_paused = not is_paused
+    if reproduciendo:
+        if is_paused:
+            player.reanudar()
+            btn_play.config(text="⏸️")
+            log_estado("▶️ Reproduciendo")
+            is_paused = False
+        else:
+            player.pausar()
+            btn_play.config(text="▶️")
+            log_estado("⏸️ Pausado")
+            is_paused = True
 
 # ────────── ROOT ──────────
 root = tk.Tk()
 root.title("Reproductor de Música - Offline/Online")
-root.geometry("700x550")
+root.geometry("900x550")
 root.configure(bg=BG_COLOR)
 
+# ────────── TOP FRAME (Buscador + Imagen) ──────────
+top_frame = Frame(root, bg=BG_COLOR)
+top_frame.pack(pady=10, fill=tk.X, padx=10)
+
 # ────────── BUSCADOR ──────────
-search_frame = Frame(root, bg=BG_COLOR)
-search_frame.pack(pady=15)
+search_frame = Frame(top_frame, bg=BG_COLOR)
+search_frame.pack(side=tk.LEFT)
 
 Label(search_frame, text="🔍 Buscar:", bg=BG_COLOR, fg=TEXT, font=FONT_TITLE).pack(side=tk.LEFT, padx=10)
 
 entry = tk.Entry(
     search_frame,
-    width=35,
+    width=25,
     font=("Segoe UI", 14),
     bg=CARD_COLOR,
     fg=TEXT,
@@ -245,6 +278,10 @@ tk.Button(
     padx=10
 ).pack(side=tk.LEFT, padx=5)
 
+# ────────── ALBUM COVER (derecha del top) ──────────
+cover_label = Label(top_frame, bg=BG_COLOR)
+cover_label.pack(side=tk.RIGHT, padx=10)
+
 # ────────── ESTADO ──────────
 estado_label = Label(
     root,
@@ -253,7 +290,7 @@ estado_label = Label(
     bg=BG_COLOR,
     font=FONT_NORMAL
 )
-estado_label.pack(pady=10)
+estado_label.pack(pady=5)
 
 def log_estado(msg):
     print(msg)
@@ -261,6 +298,71 @@ def log_estado(msg):
         estado_label.after(0, lambda: estado_label.config(text=msg))
     except:
         pass
+
+# ────────── CONTROLES ──────────
+control_frame = Frame(root, bg=BG_COLOR)
+control_frame.pack(pady=5)
+
+Label(
+    control_frame,
+    text="CONTROLES",
+    bg=BG_COLOR,
+    fg=TEXT,
+    font=FONT_TITLE
+).pack()
+
+Label(
+    control_frame,
+    text="Doble Click = Reproducir",
+    bg=BG_COLOR,
+    fg=SUBTEXT,
+    font=FONT_SMALL
+).pack()
+
+info_label = Label(control_frame, text="", bg=BG_COLOR, fg=TEXT, font=FONT_NORMAL)
+info_label.pack(pady=(0, 8))
+
+# Botones
+botones_frame = Frame(control_frame, bg=BG_COLOR)
+botones_frame.pack(pady=2)
+
+btn_style = {
+    "font": FONT_NORMAL,
+    "bg": CARD_COLOR,
+    "fg": TEXT,
+    "activebackground": ACCENT,
+    "activeforeground": "black",
+    "relief": "flat",
+    "padx": 12,
+    "pady": 5
+}
+
+# 🔥 BOTÓN TOGGLE (play/pausa)
+btn_play = tk.Button(botones_frame, text="⏸️", command=toggle_play, **btn_style)
+btn_play.grid(row=0, column=0, padx=5)
+
+progress = tk.Scale(
+    control_frame,
+    from_=0,
+    to=100,
+    orient="horizontal",
+    length=500,
+    bg=BG_COLOR,
+    fg=TEXT,
+    troughcolor=CARD_COLOR,
+    highlightthickness=0,
+    bd=0
+)
+progress.pack(pady=5)
+
+tiempo_label = tk.Label(
+    control_frame,
+    text="0:00 / 0:00",
+    bg=BG_COLOR,
+    fg=SUBTEXT,
+    font=("Segoe UI", 11)
+)
+tiempo_label.pack()
 
 # ────────── RESULTADOS ──────────
 Label(
@@ -284,72 +386,12 @@ resultados = Listbox(
     bd=0,
     highlightthickness=0
 )
+
 resultados.pack(pady=10, padx=15, fill="both", expand=True)
 
 resultados.bind("<Double-1>", reproducir)
 
-# ────────── CONTROLES ──────────
-control_frame = Frame(root, bg=BG_COLOR)
-control_frame.pack(pady=10)
+# ────────── RUN 
 
-Label(
-    control_frame,
-    text="CONTROLES",
-    bg=BG_COLOR,
-    fg=TEXT,
-    font=FONT_TITLE
-).pack()
-
-Label(
-    control_frame,
-    text="Doble Click = Reproducir",
-    bg=BG_COLOR,
-    fg=SUBTEXT,
-    font=FONT_SMALL
-).pack()
-
-# Botones
-botones_frame = Frame(control_frame, bg=BG_COLOR)
-botones_frame.pack(pady=8)
-
-btn_style = {
-    "font": FONT_NORMAL,
-    "bg": CARD_COLOR,
-    "fg": TEXT,
-    "activebackground": ACCENT,
-    "activeforeground": "black",
-    "relief": "flat",
-    "padx": 12,
-    "pady": 5
-}
-
-# 🔥 BOTÓN TOGGLE (play/pausa)
-btn_play = tk.Button(botones_frame, text="⏸️", command=toggle_play, **btn_style)
-btn_play.grid(row=0, column=0, padx=5)
-
-# ────────── PROGRESO ──────────
-progress = tk.Scale(
-    root,
-    from_=0,
-    to=100,
-    orient="horizontal",
-    length=500,
-    bg=BG_COLOR,
-    fg=TEXT,
-    troughcolor=CARD_COLOR,
-    highlightthickness=0,
-    bd=0
-)
-progress.pack(pady=5)
-
-tiempo_label = tk.Label(
-    root,
-    text="0:00 / 0:00",
-    bg=BG_COLOR,
-    fg=SUBTEXT,
-    font=("Segoe UI", 11)
-)
-tiempo_label.pack()
-# ────────── RUN ──────────
 actualizar_barra()
 root.mainloop()

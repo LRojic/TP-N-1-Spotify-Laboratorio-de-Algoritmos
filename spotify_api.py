@@ -14,6 +14,18 @@ def get_spotify_client():
     ))
     return sp
 
-def search_tracks(sp, query, limit=10):
-    results = sp.search(q=query, type="track", limit=limit)["tracks"]["items"]
-    return results
+def search_tracks(sp, query):
+    results = sp.search(q=query, type='track', limit=8)
+    tracks = results['tracks']['items']
+
+    data = []
+    for t in tracks:
+        data.append({
+            "name": t["name"],
+            "artists": t["artists"],
+            "album": t["album"]["name"],  # ✅ NUEVO
+            "image": t["album"]["images"][0]["url"] if t["album"]["images"] else None,  # ✅ NUEVO
+            "external_urls": t["external_urls"]
+        })
+
+    return data
