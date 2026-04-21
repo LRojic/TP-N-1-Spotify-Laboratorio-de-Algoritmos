@@ -23,8 +23,9 @@ def search_tracks(sp, query):
         data.append({
             "name": t["name"],
             "artists": t["artists"],
-            "album": t["album"]["name"],  # ✅ NUEVO
-            "image": t["album"]["images"][0]["url"] if t["album"]["images"] else None,  # ✅ NUEVO
+            "album": t["album"]["name"],
+            "image": t["album"]["images"][0]["url"] if t["album"]["images"] else None,
+            "preview_url": t.get("preview_url"),
             "external_urls": t["external_urls"]
         })
 
