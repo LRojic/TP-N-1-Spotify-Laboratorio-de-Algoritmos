@@ -324,10 +324,9 @@ class BibliotecaView(QWidget):
         playlists_layout.setSpacing(20)
         playlists_layout.setAlignment(Qt.AlignLeft)
 
-        emojis = ["🎸", "🎵", "🔥", "🎧", "⚡"]
-        for i, (nombre_playlist, tracks) in enumerate(PLAYLISTS.items()):
-            card = self._create_card(emojis[i % len(emojis)], nombre_playlist, tracks)
-            playlists_layout.addWidget(card)
+        self.emojis = ["🎸", "🎵", "🔥", "🎧", "⚡"]
+        self.playlists_layout = playlists_layout
+        self._build_playlists()
 
         layout.addLayout(playlists_layout)
         layout.addStretch()
@@ -392,6 +391,20 @@ class BibliotecaView(QWidget):
         card.mousePressEvent = lambda e, n=nombre, t=tracks: self._open_playlist(n, t)
         return card
     
+    def _build_playlists(self):
+        while self.playlists_layout.count():
+            item = self.playlists_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        for i, (nombre_playlist, tracks) in enumerate(PLAYLISTS.items()):
+            card = self._create_card(self.emojis[i % len(self.emojis)], nombre_playlist, tracks)
+            self.playlists_layout.addWidget(card)
+
+    def reload_playlists(self):
+        self._build_playlists()
+
     def _open_playlist(self, nombre: str, tracks: list):
         playlist_view = PlaylistView(nombre, tracks, self.on_play, self.stack)
         if self.stack.count() > 3:
@@ -435,6 +448,7 @@ class MusicPlayer(QMainWindow):
         self.playlist_actual = []
         self.playlist_index  = 0
         self.shuffle_on      = False
+        self.local_playlist_dirs = {}
         
         from main import descargar_playlists
         descargar_playlists(
@@ -467,7 +481,8 @@ class MusicPlayer(QMainWindow):
         
         self.content_stack.current_playlist_view = None  # ← agregá esta línea
         self.content_stack.addWidget(self._create_search_section())                                   # índice 0
-        self.content_stack.addWidget(BibliotecaView(self._play_desde_playlist, self.content_stack))  # índice 1
+        self.biblioteca_view = BibliotecaView(self._play_desde_playlist, self.content_stack)
+        self.content_stack.addWidget(self.biblioteca_view)                                            # índice 1
         self.content_stack.addWidget(self._create_config_screen())                                    # índice 2
         body_layout.addWidget(self.content_stack, 1)
 
@@ -706,6 +721,11 @@ class MusicPlayer(QMainWindow):
         abrir_btn.clicked.connect(self._abrir_archivo_local)
         layout.addWidget(abrir_btn)
 
+        carpeta_btn = QPushButton("📁 Abrir Carpeta")
+        carpeta_btn.setStyleSheet(style)
+        carpeta_btn.clicked.connect(self._abrir_carpeta_local)
+        layout.addWidget(carpeta_btn)
+
         config_btn = QPushButton("⚙️ Configuración")
         config_btn.setStyleSheet(style)
         config_btn.clicked.connect(lambda: self.content_stack.setCurrentIndex(2))
@@ -718,7 +738,7 @@ class MusicPlayer(QMainWindow):
     def _play_desde_playlist(self, track: dict):
         for nombre_playlist, tracks in PLAYLISTS.items():
             for i, t in enumerate(tracks):
-                if t['url'] == track['url']:
+                if (track.get('url') and t.get('url') == track.get('url')) or (track.get('path') and t.get('path') == track.get('path')):
                     self.playlist_actual = tracks
                     self.playlist_index  = i
                     # Remarcar la fila
@@ -726,20 +746,25 @@ class MusicPlayer(QMainWindow):
                     if vista:
                         vista.set_playing(i + 1)
                     break
+            else:
+                continue
+            break
 
         self._reproducir_track_playlist(track)
 
     def _reproducir_track_playlist(self, track: dict):
-        ruta = buscar_cancion_playlist(track['nombre'], track['artista'])
-        if ruta:
+        ruta = track.get('path') or buscar_cancion_playlist(track['nombre'], track['artista'])
+        if ruta and os.path.exists(ruta):
             ruta_final = convertir_a_mp3(ruta)
             self.duracion_total = obtener_duracion(ruta_final)
             self.progress_slider.setMaximum(max(self.duracion_total, 1))  # mínimo 1 para evitar division por cero
             self.duration_label.setText(self._format_time(self.duracion_total))
-            self.track_label.setText(f"▶ {track['nombre']} - {track['artista']}")
+            self.track_label.setText(f"▶ {track.get('nombre', 'Desconocido')} - {track.get('artista', 'Local')}")
             player.reproducir(ruta_final)
             self.is_playing = True
-        else:
+            return
+
+        if track.get('url'):
             track_spotify = {
                 'name': track['nombre'],
                 'artists': [{'name': track['artista']}],
@@ -749,6 +774,8 @@ class MusicPlayer(QMainWindow):
                 'image': None,
             }
             self._on_track_selected(track_spotify)
+        else:
+            self.log_area.append(f"❌ No se encontró ruta local para: {track.get('nombre', 'Desconocido')}")
 
     def _next_track(self):
         if not hasattr(self, 'playlist_actual') or not self.playlist_actual:
@@ -1066,11 +1093,88 @@ class MusicPlayer(QMainWindow):
             for ruta in archivos:
                 self._reproducir_archivo_local(ruta)
 
-    def _reproducir_archivo_local(self, ruta: str):
+    def _abrir_carpeta_local(self):
+        """Abre un diálogo para seleccionar una carpeta de audio y crear una playlist."""
+        carpeta = QFileDialog.getExistingDirectory(
+            self,
+            "Seleccionar carpeta de audio",
+            ""
+        )
+        if not carpeta:
+            return
+
+        archivos = []
+        for root, _, files in os.walk(carpeta):
+            for archivo in sorted(files):
+                if archivo.lower().endswith(('.mp3', '.wav', '.webm', '.m4a', '.flac', '.ogg')):
+                    archivos.append(os.path.join(root, archivo))
+
+        if not archivos:
+            self.log_area.append(f"❌ No hay archivos de audio en: {carpeta}")
+            return
+
+        self._crear_playlist_desde_carpeta(carpeta, archivos)
+        self._reproducir_archivo_local(archivos[0], crear_playlist=False)
+
+    def _crear_playlist_desde_carpeta(self, carpeta: str, archivos: list):
+        carpeta = os.path.abspath(carpeta)
+        if carpeta in self.local_playlist_dirs:
+            nombre_playlist = self.local_playlist_dirs[carpeta]
+            tracks = []
+            for ruta in archivos:
+                nombre_archivo = os.path.splitext(os.path.basename(ruta))[0]
+                tracks.append({
+                    'nombre': nombre_archivo,
+                    'artista': 'Local',
+                    'path': ruta,
+                })
+            PLAYLISTS[nombre_playlist] = tracks
+            self.log_area.append(f"✅ Playlist local actualizada: {nombre_playlist} ({len(tracks)} canciones)")
+            self._refresh_biblioteca()
+            return
+
+        nombre_carpeta = os.path.basename(carpeta) or carpeta
+        nombre_playlist = f"📁 {nombre_carpeta}"
+        original_name = nombre_playlist
+        contador = 1
+        while nombre_playlist in PLAYLISTS:
+            contador += 1
+            nombre_playlist = f"{original_name} ({contador})"
+
+        tracks = []
+        for ruta in archivos:
+            nombre_archivo = os.path.splitext(os.path.basename(ruta))[0]
+            tracks.append({
+                'nombre': nombre_archivo,
+                'artista': 'Local',
+                'path': ruta,
+            })
+
+        PLAYLISTS[nombre_playlist] = tracks
+        self.local_playlist_dirs[carpeta] = nombre_playlist
+        self.log_area.append(f"✅ Playlist local creada: {nombre_playlist} ({len(tracks)} canciones)")
+        self._refresh_biblioteca()
+
+    def _refresh_biblioteca(self):
+        if hasattr(self, 'biblioteca_view') and self.biblioteca_view:
+            self.biblioteca_view.reload_playlists()
+
+    def _reproducir_archivo_local(self, ruta: str, crear_playlist: bool = True):
         """Reproduce un archivo de audio local"""
         if not os.path.exists(ruta):
             self.log_area.append(f"❌ Archivo no encontrado: {ruta}")
             return
+
+        if crear_playlist:
+            carpeta = os.path.dirname(ruta)
+            if carpeta and carpeta not in self.local_playlist_dirs:
+                archivos = []
+                for root, _, files in os.walk(carpeta):
+                    for archivo in sorted(files):
+                        if archivo.lower().endswith(('.mp3', '.wav', '.webm', '.m4a', '.flac', '.ogg')):
+                            archivos.append(os.path.join(root, archivo))
+                if archivos:
+                    self._crear_playlist_desde_carpeta(carpeta, archivos)
 
         # Convertir a MP3 si es necesario
         ruta_final = convertir_a_mp3(ruta)

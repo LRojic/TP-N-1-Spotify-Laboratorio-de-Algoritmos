@@ -305,3 +305,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+#C:\Users\karin\OneDrive\Documentos\GitHub\python-con-nacho\Trabajo-practico-N-1---Laboratorio-de-Algoritmos\main.py
