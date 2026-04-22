@@ -17,7 +17,7 @@ import requests
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QSlider, QScrollArea, QFrame,
-    QTextEdit, QShortcut, QStackedWidget
+    QTextEdit, QShortcut, QStackedWidget, QFileDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QKeySequence
@@ -701,6 +701,11 @@ class MusicPlayer(QMainWindow):
         cola_btn.setStyleSheet(style)
         layout.addWidget(cola_btn)
 
+        abrir_btn = QPushButton("📂 Abrir Archivo")
+        abrir_btn.setStyleSheet(style)
+        abrir_btn.clicked.connect(self._abrir_archivo_local)
+        layout.addWidget(abrir_btn)
+
         config_btn = QPushButton("⚙️ Configuración")
         config_btn.setStyleSheet(style)
         config_btn.clicked.connect(lambda: self.content_stack.setCurrentIndex(2))
@@ -1047,6 +1052,46 @@ class MusicPlayer(QMainWindow):
     def _on_volume_changed(self, value: int):
         """Control de volumen - ajusta el volumen de pygame"""
         player.set_volume(value / 100.0)
+
+    def _abrir_archivo_local(self):
+        """Abre un diálogo para seleccionar archivos de audio locales"""
+        archivos, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Seleccionar archivos de audio",
+            "",
+            "Archivos de audio (*.mp3 *.wav *.webm *.m4a *.flac *.ogg);;Todos los archivos (*)"
+        )
+        
+        if archivos:
+            for ruta in archivos:
+                self._reproducir_archivo_local(ruta)
+
+    def _reproducir_archivo_local(self, ruta: str):
+        """Reproduce un archivo de audio local"""
+        if not os.path.exists(ruta):
+            self.log_area.append(f"❌ Archivo no encontrado: {ruta}")
+            return
+
+        # Convertir a MP3 si es necesario
+        ruta_final = convertir_a_mp3(ruta)
+        
+        # Obtener duración
+        self.duracion_total = obtener_duracion(ruta_final)
+        self.progress_slider.setMaximum(max(self.duracion_total, 1))
+        self.duration_label.setText(self._format_time(self.duracion_total))
+        
+        # Nombre del archivo sin extensión
+        nombre_archivo = os.path.splitext(os.path.basename(ruta))[0]
+        
+        # Actualizar UI
+        self.track_label.setText(f"▶ {nombre_archivo} (Local)")
+        self.current_track = {'name': nombre_archivo, 'local': True, 'path': ruta_final}
+        
+        # Reproducir
+        player.reproducir(ruta_final)
+        self.is_playing = True
+        
+        self.log_area.append(f"▶️ Reproduciendo: {nombre_archivo}")
 
     @staticmethod
     def _format_time(seconds: float) -> str:
