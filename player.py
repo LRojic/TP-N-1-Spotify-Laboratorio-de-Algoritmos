@@ -1,145 +1,91 @@
+# player.py
+
 import pygame
 import os
 import threading
 import time
 
-# Inicializar mixer con manejo de errores
+# Inicializar mixer
 print("Inicializando pygame.mixer...")
-try:
-    pygame.mixer.init()
-    print("   pygame.mixer inicializado")
-    AUDIO_AVAILABLE = True
-except Exception as e:
-    print(f"   Error inicializando pygame.mixer: {e}")
-    print("   Algunos controles de audio pueden no funcionar")
-    AUDIO_AVAILABLE = False
+pygame.mixer.init()
+print("   pygame.mixer inicializado")
 
 # Estado global
 pausado = False
 reproduciendo = False
 
+
+def get_pos():
+    """Devuelve la posición actual en segundos (-1 si no hay nada)"""
+    pos_ms = pygame.mixer.music.get_pos()
+    if pos_ms == -1:
+        return -1
+    return pos_ms / 1000
+
+
+def set_pos(seconds: float):
+    """Salta a una posición en segundos"""
+    try:
+        pygame.mixer.music.set_pos(seconds)
+    except Exception as e:
+        print(f"⚠️ set_pos error: {e}")
+
+
 def reproducir(ruta):
     """Reproduce un archivo de audio"""
     global pausado, reproduciendo
-    print(f"\nReproducir: {ruta}")
-
-    if not AUDIO_AVAILABLE:
-        print("   Audio no disponible en el sistema")
-        return
 
     if not os.path.exists(ruta):
-        print(f"   Archivo NO existe: {ruta}")
+        print(f"❌ No existe el archivo: {ruta}")
         return
-
-    print(f"   Archivo existe ({os.path.getsize(ruta)} bytes)")
 
     def hilo_reproduccion():
         global pausado, reproduciendo
         try:
-            print("   Cargando en pygame...")
+            print(f"▶️ Cargando: {os.path.basename(ruta)}")
             pygame.mixer.music.load(ruta)
-            print("   Iniciando reproducción...")
             pygame.mixer.music.play()
 
             pausado = False
             reproduciendo = True
-            print("   Reproducción activa")
-            
-            # El bucle mantiene el hilo vivo mientras suene o esté en pausa
+
+            print(f"▶️ Reproduciendo: {os.path.basename(ruta)}")
+
             while pygame.mixer.music.get_busy() or pausado:
                 time.sleep(0.5)
 
             reproduciendo = False
-            print("   Reproducción completada")
+            print(f"✅ Reproducción completada: {os.path.basename(ruta)}")
 
         except Exception as e:
-            print(f"   Error en pygame: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error reproduciendo: {e}")
             reproduciendo = False
 
-    thread = threading.Thread(target=hilo_reproduccion, daemon=True)
-    thread.start()
-    print("   Thread de reproducción iniciado")
+    threading.Thread(target=hilo_reproduccion, daemon=True).start()
 
 
 def pausar():
     """Pausa la música"""
     global pausado
-    if not AUDIO_AVAILABLE:
-        print("PAUSAR (audio no disponible)")
-        return
-    
-    print(f"PAUSAR (get_busy={pygame.mixer.music.get_busy()})")
     if pygame.mixer.music.get_busy():
         pygame.mixer.music.pause()
         pausado = True
-        print("   Pausado")
-    else:
-        print("   No hay música reproduciéndose")
+        print("⏸️ Música pausada")
 
 
 def reanudar():
     """Reanuda la música"""
     global pausado
-    if not AUDIO_AVAILABLE:
-        print("REANUDAR (audio no disponible)")
-        return
-    
-    print(f"REANUDAR (pausado={pausado})")
     if pausado:
         pygame.mixer.music.unpause()
         pausado = False
-        print("   Reanudado")
-    else:
-        print("   Música no está pausada")
+        print("▶️ Música reanudada")
 
 
 def stop():
     """Detener música"""
     global pausado, reproduciendo
-    print(f"STOP (reproduciendo={reproduciendo})")
-    if not AUDIO_AVAILABLE:
-        print("   Audio no disponible")
-        return
-    
     pygame.mixer.music.stop()
     pausado = False
     reproduciendo = False
-    print("   Detenido")
-# ────────── NUEVAS FUNCIONES PARA LA BARRA ──────────
-
-# Variable para rastrear el tiempo acumulado por saltos manuales
-tiempo_inicio_salto = 0
-
-def get_pos():
-    """Retorna la posición real de la canción en segundos"""
-    global tiempo_inicio_salto
-    if not AUDIO_AVAILABLE:
-        return 0
-    if reproduciendo:
-        # get_pos() de pygame da el tiempo transcurrido desde el último play()
-        # Le sumamos el tiempo donde empezó el último salto
-        return (pygame.mixer.music.get_pos() / 1000) + tiempo_inicio_salto
-    return 0
-
-def set_pos(segundos):
-    """Salta a una posición específica reiniciando el play desde ese punto"""
-    global tiempo_inicio_salto, reproduciendo, pausado
-    if not AUDIO_AVAILABLE:
-        print("SEEK (audio no disponible)")
-        return
-    if reproduciendo:
-        try:
-            # Guardamos el punto de inicio para que get_pos() no se resetee a 0
-            tiempo_inicio_salto = segundos
-            
-            # Reiniciamos la música desde el segundo elegido
-            pygame.mixer.music.play(start=segundos)
-            
-            # Si estaba pausado, lo despausamos automáticamente al saltar
-            pausado = False
-            
-            print(f"Posición cambiada a: {segundos}s")
-        except Exception as e:
-            print(f"Error al saltar: {e}")
+    print("⏹️ Música detenida")
