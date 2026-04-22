@@ -1,91 +1,98 @@
-# player.py
-
 import pygame
 import os
 import threading
 import time
 
-# Inicializar mixer
-print("Inicializando pygame.mixer...")
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 pygame.mixer.init()
-print("   pygame.mixer inicializado")
 
-# Estado global
-pausado = False
-reproduciendo = False
+_pausado = False
+_reproduciendo = False
+_pos_pausado = 0.0       # posición en segundos cuando se pausó
+_tiempo_unpause = 0      # tick de pygame.mixer al reanudar (get_pos referencia desde acá)
 
 
-def get_pos():
-    """Devuelve la posición actual en segundos (-1 si no hay nada)"""
-    pos_ms = pygame.mixer.music.get_pos()
-    if pos_ms == -1:
+def get_pos() -> float:
+    if _pausado:
+        return _pos_pausado
+    if not pygame.mixer.music.get_busy():
         return -1
-    return pos_ms / 1000
+    raw = pygame.mixer.music.get_pos()   # ms desde último play/unpause
+    if raw < 0:
+        return -1
+    return _pos_pausado + (raw - _tiempo_unpause) / 1000.0
 
 
 def set_pos(seconds: float):
-    """Salta a una posición en segundos"""
+    global _pos_pausado, _tiempo_unpause
     try:
+        _pos_pausado = seconds
+        _tiempo_unpause = 0
         pygame.mixer.music.set_pos(seconds)
-    except Exception as e:
-        print(f"⚠️ set_pos error: {e}")
+    except Exception:
+        pass
 
 
-def reproducir(ruta):
-    """Reproduce un archivo de audio"""
-    global pausado, reproduciendo
+def set_volume(volumen: float):
+    """Establece el volumen (0.0 a 1.0)"""
+    pygame.mixer.music.set_volume(max(0.0, min(1.0, volumen)))
+
+
+def reproducir(ruta: str):
+    global _pausado, _reproduciendo, _pos_pausado, _tiempo_unpause
 
     if not os.path.exists(ruta):
-        print(f"❌ No existe el archivo: {ruta}")
         return
 
-    def hilo_reproduccion():
-        global pausado, reproduciendo
+    def _hilo():
+        global _pausado, _reproduciendo, _pos_pausado, _tiempo_unpause
         try:
-            print(f"▶️ Cargando: {os.path.basename(ruta)}")
             pygame.mixer.music.load(ruta)
             pygame.mixer.music.play()
+            _pausado = False
+            _reproduciendo = True
+            _pos_pausado = 0.0
+            _tiempo_unpause = 0
 
-            pausado = False
-            reproduciendo = True
+            while pygame.mixer.music.get_busy() or _pausado:
+                time.sleep(0.2)
 
-            print(f"▶️ Reproduciendo: {os.path.basename(ruta)}")
+            _reproduciendo = False
+            if _on_finish_callback:          # ← llamar al terminar
+                _on_finish_callback()
 
-            while pygame.mixer.music.get_busy() or pausado:
-                time.sleep(0.5)
-
-            reproduciendo = False
-            print(f"✅ Reproducción completada: {os.path.basename(ruta)}")
-
-        except Exception as e:
-            print(f"❌ Error reproduciendo: {e}")
-            reproduciendo = False
-
-    threading.Thread(target=hilo_reproduccion, daemon=True).start()
+        except Exception:
+            _reproduciendo = False
+    threading.Thread(target=_hilo, daemon=True).start()
 
 
 def pausar():
-    """Pausa la música"""
-    global pausado
+    global _pausado, _pos_pausado
     if pygame.mixer.music.get_busy():
+        _pos_pausado = get_pos()    # guardar posición exacta antes de pausar
         pygame.mixer.music.pause()
-        pausado = True
-        print("⏸️ Música pausada")
+        _pausado = True
 
 
 def reanudar():
-    """Reanuda la música"""
-    global pausado
-    if pausado:
+    global _pausado, _tiempo_unpause
+    if _pausado:
+        _tiempo_unpause = pygame.mixer.music.get_pos()  # get_pos() va a devolver 0 acá, pero lo capturamos igual
         pygame.mixer.music.unpause()
-        pausado = False
-        print("▶️ Música reanudada")
+        _tiempo_unpause = pygame.mixer.music.get_pos()  # capturar DESPUÉS del unpause
+        _pausado = False
 
 
 def stop():
-    """Detener música"""
-    global pausado, reproduciendo
+    global _pausado, _reproduciendo, _pos_pausado, _tiempo_unpause
     pygame.mixer.music.stop()
-    pausado = False
-    reproduciendo = False
-    print("⏹️ Música detenida")
+    _pausado = False
+    _reproduciendo = False
+    _pos_pausado = 0.0
+    _tiempo_unpause = 0
+
+_on_finish_callback = None
+
+def set_on_finish(callback):
+    global _on_finish_callback
+    _on_finish_callback = callback
