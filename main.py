@@ -89,7 +89,7 @@ PLAYLISTS = {
      "🎵 Pop 2000s": [
         {"nombre": "Toxic",            "artista": "Britney Spears",  "url": "https://open.spotify.com/track/6I9VzXrHxO9rA9A5euc8Ak"},
         {"nombre": "Umbrella",         "artista": "Rihanna",         "url": "https://open.spotify.com/track/49FYlytm3dAAraYgpoJZux"},
-        {"nombre": "Moves Like Jagger","artista": "Maroon 5",        "url": "https://open.spotify.com/track/2bL2gyO6kBdLkNSkxXNh6x"},
+        {"nombre": "Maps",             "artista": "Maroon 5",        "url": "https://open.spotify.com/track/4gbVRS8gloEluzf0GzDOFc"},
         {"nombre": "Poker Face",       "artista": "Lady Gaga",       "url": "https://open.spotify.com/track/1QV6tiMFM6fSOKOGLMHYYg"},
         {"nombre": "Hips Don't Lie",   "artista": "Shakira",         "url": "https://open.spotify.com/track/3d0WouFnFmr0K3kjeza3fF"},
         {"nombre": "Hot N Cold",       "artista": "Katy Perry",      "url": "https://open.spotify.com/track/1TEjSXPdAakDotj2Wji3PU"},

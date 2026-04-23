@@ -334,7 +334,7 @@ class BibliotecaView(QWidget):
 
     def _create_card(self, emoji: str, nombre: str, tracks: list) -> QFrame:
         card = QFrame()
-        card.setFixedSize(200, 240)
+        card.setFixedSize(200, 300)
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet(f'''
             QFrame {{
@@ -355,18 +355,18 @@ class BibliotecaView(QWidget):
 
         # Imagen de portada
         cover_label = QLabel()
-        cover_label.setFixedSize(200, 140)
+        cover_label.setFixedSize(200, 200)
         cover_label.setAlignment(Qt.AlignCenter)
         cover_label.setStyleSheet("border-radius: 12px 12px 0px 0px; background-color: #333;")
 
         ruta_imagen = PLAYLIST_COVERS.get(nombre)
         if ruta_imagen and os.path.exists(ruta_imagen):
             pixmap = QPixmap(ruta_imagen)
-            pixmap = pixmap.scaled(200, 140, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            pixmap = pixmap.scaled(200, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
             # Recortar al centro
             x = (pixmap.width() - 200) // 2
-            y = (pixmap.height() - 140) // 2
-            pixmap = pixmap.copy(x, y, 200, 140)
+            y = (pixmap.height() - 200) // 2
+            pixmap = pixmap.copy(x, y, 200, 200)
             cover_label.setPixmap(pixmap)
         else:
             cover_label.setText(emoji)
@@ -572,29 +572,43 @@ class MusicPlayer(QMainWindow):
             QPushButton:hover {{ background-color: {COLORS['bg_tertiary']}; }}
         ''')
         control_layout.addWidget(next_btn)
-        for btn_text, callback in [
-            ("▶ Play", self._toggle_play),
-            ("⏹ Stop", self._stop),
-        ]:
-            btn = QPushButton(btn_text)
-            btn.setFixedWidth(100)
-            btn.setFont(QFont('Arial', 9, QFont.Bold))
-            btn.clicked.connect(callback)
-            btn.setStyleSheet(f'''
-                QPushButton {{
-                    background-color: {COLORS['bg_secondary']};
-                    color: {COLORS['text_primary']};
-                    border: 1px solid {COLORS['border']};
-                    border-radius: 4px;
-                    padding: 6px;
-                }}
-                QPushButton:hover {{
-                    background-color: {COLORS['bg_tertiary']};
-                }}
-            ''')
-            
-            control_layout.addWidget(btn)
-        
+
+        self.play_pause_btn = QPushButton("⏸ Pausar")
+        self.play_pause_btn.setFixedWidth(100)
+        self.play_pause_btn.setFont(QFont('Arial', 9, QFont.Bold))
+        self.play_pause_btn.clicked.connect(self._toggle_play)
+        self.play_pause_btn.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {COLORS['bg_secondary']};
+                color: {COLORS['text_primary']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
+                padding: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['bg_tertiary']};
+            }}
+        ''')
+        control_layout.addWidget(self.play_pause_btn)
+
+        stop_btn = QPushButton("⏹ Stop")
+        stop_btn.setFixedWidth(100)
+        stop_btn.setFont(QFont('Arial', 9, QFont.Bold))
+        stop_btn.clicked.connect(self._stop)
+        stop_btn.setStyleSheet(f'''
+            QPushButton {{
+                background-color: {COLORS['bg_secondary']};
+                color: {COLORS['text_primary']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
+                padding: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['bg_tertiary']};
+            }}
+        ''')
+        control_layout.addWidget(stop_btn)
+
         top_row.addLayout(control_layout)
         layout.addLayout(top_row)
 
@@ -1046,13 +1060,17 @@ class MusicPlayer(QMainWindow):
     def _toggle_play(self):
         if self.is_playing:
             player.pausar()
+            self.play_pause_btn.setText("▶ Despausar")
         else:
             player.reanudar()
+            self.play_pause_btn.setText("⏸ Pausar")
         self.is_playing = not self.is_playing
 
     def _stop(self):
         player.stop()
         self.is_playing = False
+        if hasattr(self, 'play_pause_btn'):
+            self.play_pause_btn.setText("▶ Play")
 
     def _on_slider_released(self):
         """Se ejecuta cuando el usuario suelta el slider"""
